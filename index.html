@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Générateur de Carte "J'y Serai !" - Édition 2027 (Corrigé)</title>
+    <style>
+        :root {
+            --gold: linear-gradient(135deg, #d4af37 0%, #f3e5ab 50%, #aa771c 100%);
+            --dark-bg: #0d0d0d;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--dark-bg);
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: row;
+            max-width: 1100px;
+            width: 90%;
+            background: #141414;
+            border: 1px solid #2a2210;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+        }
+
+        /* Section Formulaire */
+        .form-section {
+            flex: 1;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        h1 {
+            background: var(--gold);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 24px;
+            text-transform: uppercase;
+            margin-bottom: 30px;
+            letter-spacing: 1px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #b3b3b3;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            box-sizing: border-box;
+            transition: border 0.3s;
+        }
+
+        input[type="text"]:focus {
+            border-color: #d4af37;
+            outline: none;
+        }
+
+        .file-label {
+            display: block;
+            padding: 12px;
+            background: #1a1a1a;
+            border: 2px dashed #444;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .file-label:hover {
+            border-color: #d4af37;
+            background: #221a0a;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 15px;
+            background: var(--gold);
+            border: none;
+            border-radius: 8px;
+            color: #000;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(212, 175, 55, 0.4);
+        }
+
+        /* Section Prévisualisation */
+        .preview-section {
+            flex: 1;
+            background: #090909;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-left: 1px solid #2a2210;
+        }
+
+        canvas {
+            max-width: 100%;
+            max-height: 500px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            background: #111;
+        }
+
+        .status {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #888;
+        }
+
+        @media (max-width: 768px) {
+            .container { flex-direction: column; }
+            .preview-section { border-left: none; border-top: 1px solid #2a2210; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Formulaire -->
+    <div class="form-section">
+        <h1>Générateur de Carte<br>Édition 2027</h1>
+        
+        <div class="input-group">
+            <label for="lastName">NOM (En MAJUSCULES)</label>
+            <input type="text" id="lastName" placeholder="Ex: SODOKIN" oninput="drawCard()">
+        </div>
+
+        <div class="input-group">
+            <label for="firstName">PRÉNOM</label>
+            <input type="text" id="firstName" placeholder="Ex: Léoboui Faris" oninput="drawCard()">
+        </div>
+
+        <div class="input-group">
+            <label>VOTRE PHOTO</label>
+            <label for="photoInput" class="file-label" id="fileLabel">📸 Choisir une photo</label>
+            <input type="file" id="photoInput" accept="image/*" onchange="handlePhoto(event)">
+        </div>
+
+        <button onclick="downloadCard()">⬇️ Télécharger ma carte</button>
+    </div>
+
+    <!-- Aperçu -->
+    <div class="preview-section">
+        <canvas id="cardCanvas" width="1200" height="1600"></canvas>
+        <div class="status">[ Prévisualisation en temps réel ]</div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('cardCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Charger l'image de fond vierge (sans photo de Clément ni son nom)
+    const bgImage = new Image();
+    bgImage.src = 'background.jpg'; // Mets ici le nom exact de ton image de fond propre
+    
+    let userPhoto = null;
+
+    bgImage.onload = () => {
+        drawCard();
+    };
+
+    function handlePhoto(event) {
+        const file = event.target.files[0];
+        if (file) {
+            document.getElementById('fileLabel').innerText = "✅ Photo chargée";
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                userPhoto = new Image();
+                userPhoto.onload = function() {
+                    drawCard();
+                }
+                userPhoto.src = e.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+    }
+
+    function drawCard() {
+        // 1. Dessiner le fond (image de fond vierge)
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+
+        // --- ZONE DE SÉCURITÉ ET MASQUAGE AUTOMATIQUE ---
+        
+        // Coordonnées et rayon du cercle (Zone de la photo)
+        // Correction de centerY pour un meilleur centrage dans le cercle doré
+        const centerX = 445; 
+        const centerY = 560; // Ajustement ici
+        const radius = 295;  
+
+        // A. On masque l'ancienne zone du nom (Clément Martin) avec un rectangle noir
+        ctx.fillStyle = "#070707";
+        ctx.fillRect(100, 1140, 700, 190); 
+
+        // B. Si l'utilisateur n'a pas encore chargé sa photo, on met un fond sombre neutre
+        if (!userPhoto) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.fillStyle = "#111111";
+            ctx.fill();
+            
+            // Petit texte d'indication dans le rond
+            ctx.fillStyle = "#d4af37";
+            ctx.textAlign = 'center';
+            ctx.font = '30px Segoe UI';
+            ctx.fillText("[ Votre Photo Ici ]", centerX, centerY);
+            ctx.restore();
+        }
+
+        // 2. Dessiner la photo de l'utilisateur (si elle est chargée)
+        if (userPhoto) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.clip();
+
+            // Ajustement automatique pour ne pas déformer l'image importée
+            const aspect = userPhoto.width / userPhoto.height;
+            let drawWidth = radius * 2;
+            let drawHeight = radius * 2;
+            let drawX = centerX - radius;
+            let drawY = centerY - radius;
+
+            if (aspect > 1) {
+                drawWidth = drawHeight * aspect;
+                drawX = centerX - (drawWidth / 2);
+            } else {
+                drawHeight = drawWidth / aspect;
+                drawY = centerY - (drawHeight / 2);
+            }
+
+            // Correction mineure pour le centrage horizontal de la photo dans le clip
+            //drawX += (drawWidth - (radius * 2)) / 2; // Si nécessaire
+
+            ctx.drawImage(userPhoto, drawX, drawY, drawWidth, drawHeight);
+            ctx.restore();
+        }
+
+        // 3. Ajouter les nouveaux textes saisis par l'utilisateur
+        const lastName = document.getElementById('lastName').value || "VOTRE NOM";
+        const firstName = document.getElementById('firstName').value || "Votre Prénom";
+
+        // Style pour le NOM (Grand et doré/blanc)
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 70px Segoe UI';
+        ctx.fillText(lastName.toUpperCase(), 445, 1220); // Position Y ajustée
+
+        // Style pour le PRÉNOM (Style manuscrit ou plus fin)
+        ctx.fillStyle = '#d4af37';
+        ctx.font = 'italic 55px Georgia';
+        ctx.fillText(firstName, 445, 1300); // Position Y ajustée
+    }
+
+    // Fonction de téléchargement
+    function downloadCard() {
+        const link = document.createElement('a');
+        link.download = 'ma-carte-presence-2027.jpg';
+        link.href = canvas.toDataURL('image/jpeg', 0.95);
+        link.click();
+    }
+</script>
+</body>
+</html>
