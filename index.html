@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Générateur de Carte "J'y Serai !" - Édition 2027</title>
-    <!-- Styles de Croppr.js -->
-    <link href="https://cdn.jsdelivr.net/gh/jamessouth/Croppr.js@v2.3.0/dist/croppr.min.css" rel="stylesheet">
     <style>
         :root {
             --gold: linear-gradient(135deg, #d4af37 0%, #f3e5ab 50%, #aa771c 100%);
@@ -110,44 +108,15 @@
             display: none;
         }
 
-        /* Zone de Crop Manuel */
-        .crop-container {
+        /* Curseur de zoom manuel */
+        .zoom-container {
             margin-top: 15px;
             display: none;
-            flex-direction: column;
-            align-items: center;
-            background: #111;
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid #333;
         }
 
-        .crop-wrapper {
-            max-width: 100%;
-            max-height: 300px;
-            overflow: hidden;
-        }
-
-        .crop-wrapper img {
-            max-width: 100%;
-        }
-
-        /* Zone vidéo pour la caméra en direct */
-        .camera-container {
-            display: none;
-            flex-direction: column;
-            gap: 10px;
-            margin-top: 15px;
-            background: #000;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid #2a2210;
-        }
-
-        video {
+        .zoom-slider {
             width: 100%;
-            border-radius: 6px;
-            transform: scaleX(-1);
+            accent-color: #d4af37;
         }
 
         button.main-btn {
@@ -169,23 +138,30 @@
             box-shadow: 0 5px 15px rgba(212, 175, 55, 0.4);
         }
 
-        button.action-btn {
-            margin-top: 10px;
-            padding: 10px;
-            background: #d4af37;
-            border: none;
-            font-weight: bold;
-            border-radius: 4px;
-            cursor: pointer;
-            width: 100%;
-        }
-
         button:disabled {
             background: #444;
             color: #888;
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
+        }
+
+        /* Zone vidéo pour la caméra en direct */
+        .camera-container {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+            background: #000;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #2a2210;
+        }
+
+        video {
+            width: 100%;
+            border-radius: 6px;
+            transform: scaleX(-1); /* Effet miroir naturel pour un selfie */
         }
 
         /* Section Prévisualisation */
@@ -202,7 +178,7 @@
 
         canvas {
             max-width: 100%;
-            max-height: 550px;
+            max-height: 500px;
             border-radius: 8px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
             background: #111;
@@ -227,13 +203,13 @@
             .preview-section { border-left: none; border-top: 1px solid #2a2210; }
         }
     </style>
-    <!-- Librairies pour le Crop et face-api.js -->
-    <script src="https://cdn.jsdelivr.net/gh/jamessouth/Croppr.js@v2.3.0/dist/croppr.min.js"></script>
+    <!-- Librairie de détection de visage -->
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
 
 <div class="container">
+    <!-- Formulaire -->
     <div class="form-section">
         <h1>Générateur de Carte<br>Édition 2027</h1>
         
@@ -255,27 +231,25 @@
             </div>
             <input type="file" id="photoInput" accept="image/*" onchange="handlePhoto(event)">
             
-            <!-- Zone caméra -->
+            <!-- Zone caméra native -->
             <div id="cameraContainer" class="camera-container">
                 <video id="video" autoplay playsinline></video>
-                <button type="button" onclick="captureSnapshot()" class="action-btn">📸 Capturer</button>
-            </div>
-
-            <!-- Zone de Recadrage Manuel -->
-            <div id="cropContainer" class="crop-container">
-                <label>✂️ Ajustez le cadrage (Carré/Cercle) :</label>
-                <div class="crop-wrapper">
-                    <img id="cropImage" src="" alt="A recadrer">
-                </div>
-                <button type="button" onclick="validateAndAnalyzeCrop()" class="action-btn">🔍 Valider le cadrage & Analyser par l'IA</button>
+                <button type="button" onclick="captureSnapshot()" style="padding:10px; background:#d4af37; border:none; font-weight:bold; border-radius:4px; cursor:pointer;">📸 Capturer</button>
             </div>
 
             <div id="photoError" class="error-message"></div>
+
+            <!-- Suggestion 1 : Curseur d'ajustement du zoom manuel -->
+            <div class="zoom-container" id="zoomContainer">
+                <label for="zoomSlider">🔍 Ajuster le zoom de la photo :</label>
+                <input type="range" id="zoomSlider" class="zoom-slider" min="1" max="2.5" step="0.05" value="1" oninput="drawCard()">
+            </div>
         </div>
 
         <button id="downloadBtn" class="main-btn" onclick="downloadCard()" disabled>⬇️ Télécharger ma carte</button>
     </div>
 
+    <!-- Aperçu -->
     <div class="preview-section">
         <canvas id="cardCanvas" width="1200" height="1600"></canvas>
         <div class="status">[ Prévisualisation en temps réel ]</div>
@@ -287,19 +261,23 @@
     const ctx = canvas.getContext('2d');
     
     const bgImage = new Image();
-    bgImage.src = 'background.png'; 
+    bgImage.src = 'background.jpg'; 
     
     let userPhoto = null;
+    let facePosition = null;
     let modelsReady = false;
     let streamRef = null;
-    let cropprInstance = null;
-    let rawImageSrc = null;
 
     const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
 
     faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL)
-        .then(() => { modelsReady = true; console.log("Modèle IA chargé."); })
-        .catch(err => console.warn("Erreur chargement modèle IA.", err));
+        .then(() => {
+            modelsReady = true;
+            console.log("Modèle de détection de visage chargé.");
+        })
+        .catch((err) => {
+            console.warn("Impossible de charger le modèle de détection de visage.", err);
+        });
 
     bgImage.onload = () => { drawCard(); };
 
@@ -308,31 +286,43 @@
         const firstName = document.getElementById('firstName').value.trim();
         const downloadBtn = document.getElementById('downloadBtn');
 
-        downloadBtn.disabled = !(lastName !== "" && firstName !== "" && userPhoto !== null);
+        if (lastName !== "" && firstName !== "" && userPhoto !== null) {
+            downloadBtn.disabled = false;
+        } else {
+            downloadBtn.disabled = true;
+        }
         drawCard();
     }
 
+    // Suggestion 3 : Activer / Désactiver le flux caméra en direct
     async function toggleCamera() {
         const container = document.getElementById('cameraContainer');
         const video = document.getElementById('video');
-        if (container.style.display === 'flex') { stopCamera(); return; }
+        
+        if (container.style.display === 'flex') {
+            stopCamera();
+            return;
+        }
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
             streamRef = stream;
             video.srcObject = stream;
             container.style.display = 'flex';
-            document.getElementById('cropContainer').style.display = 'none';
         } catch (err) {
-            alert("Impossible d'accéder à l'appareil photo.");
+            alert("Impossible d'accéder à l'appareil photo. Vérifiez les permissions.");
         }
     }
 
     function stopCamera() {
-        if (streamRef) { streamRef.getTracks().forEach(track => track.stop()); streamRef = null; }
+        if (streamRef) {
+            streamRef.getTracks().forEach(track => track.stop());
+            streamRef = null;
+        }
         document.getElementById('cameraContainer').style.display = 'none';
     }
 
+    // Capturer la photo à partir du flux vidéo
     function captureSnapshot() {
         const video = document.getElementById('video');
         const tempCanvas = document.createElement('canvas');
@@ -340,104 +330,91 @@
         tempCanvas.height = video.videoHeight;
         const tempCtx = tempCanvas.getContext('2d');
         
+        // Effet miroir inversé pour remettre la photo à l'endroit lors de la capture
         tempCtx.translate(tempCanvas.width, 0);
         tempCtx.scale(-1, 1);
         tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
         
         stopCamera();
-        initCrop(tempCanvas.toDataURL('image/jpeg'));
+
+        const dataUrl = tempCanvas.toDataURL('image/jpeg');
+        processPhotoUrl(dataUrl);
     }
 
     function handlePhoto(event) {
         const file = event.target.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = function(e) { initCrop(e.target.result); }
+        reader.onload = function(e) { processPhotoUrl(e.target.result); }
         reader.readAsDataURL(file);
     }
 
-    // Initialisation du Crop Manuel
-    function initCrop(src) {
-        rawImageSrc = src;
-        const cropContainer = document.getElementById('cropContainer');
-        const cropImage = document.getElementById('cropImage');
-        const errorDiv = document.getElementById('photoError');
-        
-        errorDiv.style.display = 'none';
-        userPhoto = null;
-        updateFormState();
-
-        if (cropprInstance) { cropprInstance.destroy(); }
-        
-        cropImage.src = src;
-        cropContainer.style.display = 'flex';
-
-        // Création de l'instance de recadrage au format carré (1:1) pour correspondre au cercle
-        cropImage.onload = function() {
-            cropprInstance = new Croppr('#cropImage', {
-                aspectRatio: 1,
-                startSize: [80, 80, '%']
-            });
-        };
-    }
-
-    // Validation du crop par l'utilisateur suivi de la vérification IA
-    async function validateAndAnalyzeCrop() {
-        if (!cropprInstance) return;
-
+    async function processPhotoUrl(url) {
         const errorDiv = document.getElementById('photoError');
         const fileLabel = document.getElementById('fileLabel');
+        const zoomContainer = document.getElementById('zoomContainer');
+        
         errorDiv.style.display = 'none';
-        fileLabel.innerText = "⏳ Analyse IA...";
+        errorDiv.innerText = '';
+        userPhoto = null;
+        facePosition = null;
+        zoomContainer.style.display = 'none';
+        document.getElementById('zoomSlider').value = 1;
+        updateFormState();
 
-        // Extraction de la zone recadrée sur un canvas temporaire
-        const data = cropprInstance.getValue();
-        const baseImg = new Image();
-        baseImg.src = rawImageSrc;
+        fileLabel.innerText = "⏳ Analyse...";
 
-        baseImg.onload = async function() {
-            const cropCanvas = document.createElement('canvas');
-            cropCanvas.width = data.width;
-            cropCanvas.height = data.height;
-            const cropCtx = cropCanvas.getContext('2d');
-
-            cropCtx.drawImage(
-                baseImg,
-                data.x, data.y, data.width, data.height,
-                0, 0, data.width, data.height
-            );
-
-            // Analyse IA du résultat recadré
-            const finalImg = new Image();
-            finalImg.onload = async function() {
-                const checkResult = await analyzePhoto(finalImg);
-                
-                if (checkResult.valid) {
-                    userPhoto = finalImg;
-                    fileLabel.innerText = "✅ Image OK";
-                    document.getElementById('cropContainer').style.display = 'none';
-                } else {
-                    errorDiv.innerText = checkResult.message;
-                    errorDiv.style.display = 'block';
-                    fileLabel.innerText = "❌ Refusée";
-                }
-                updateFormState();
-            };
-            finalImg.src = cropCanvas.toDataURL('image/jpeg');
-        };
+        const tempImg = new Image();
+        tempImg.onload = async function() {
+            const checkResult = await analyzePhoto(tempImg);
+            
+            if (checkResult.valid) {
+                userPhoto = tempImg;
+                facePosition = checkResult.position;
+                fileLabel.innerText = "✅ Image OK";
+                zoomContainer.style.display = 'block'; // Activer le curseur de zoom si valide
+            } else {
+                errorDiv.innerText = checkResult.message;
+                errorDiv.style.display = 'block';
+                fileLabel.innerText = "❌ Refusée";
+                document.getElementById('photoInput').value = ""; 
+            }
+            updateFormState();
+        }
+        tempImg.src = url;
     }
 
     async function analyzePhoto(image) {
         if (!modelsReady) {
-            return { valid: false, message: "L'IA se charge. Réessayez dans une seconde." };
+            return { valid: false, message: "Le module d'analyse se charge. Réessayez dans un instant." };
         }
+
         try {
-            const detections = await faceapi.detectAllFaces(image, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }));
-            if (detections.length === 0) return { valid: false, message: "Aucun visage détecté sur la zone recadrée." };
-            if (detections.length > 1) return { valid: false, message: "Plusieurs visages détectés." };
-            return { valid: true };
+            const detections = await faceapi.detectAllFaces(
+                image,
+                new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 })
+            );
+
+            if (detections.length === 0) {
+                return { valid: false, message: "Aucun visage détecté. Photo floue, obstruée ou mal éclairée." };
+            }
+
+            if (detections.length > 1) {
+                return { valid: false, message: "Plusieurs visages détectés. Seule une personne est autorisée." };
+            }
+
+            const detection = detections[0];
+            if (detection.score < 0.6) {
+                return { valid: false, message: "Netteté insuffisante ou visage partiellement masqué." };
+            }
+
+            const box = detection.box;
+            return {
+                valid: true,
+                position: { xPct: (box.x + box.width / 2) / image.width, yPct: (box.y + box.height / 2) / image.height }
+            };
         } catch (err) {
-            return { valid: false, message: "Erreur lors de l'analyse faciale." };
+            return { valid: false, message: "Erreur lors du traitement de l'image." };
         }
     }
 
@@ -445,7 +422,7 @@
         ctx.font = `${defaultFontSize}px ${fontFamily}`;
         let width = ctx.measureText(text).width;
         let currentSize = defaultFontSize;
-        while (width > maxWidth && currentSize > 22) {
+        while (width > maxWidth && currentSize > 25) {
             currentSize -= 2;
             ctx.font = `bold ${currentSize}px ${fontFamily}`;
             width = ctx.measureText(text).width;
@@ -457,52 +434,99 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
 
-        // Coordonnées ajustées pour correspondre au cercle du milieu de l'image
-        const centerX = 320; 
-        const centerY = 418; 
-        const radius = 275;  
+        const centerX = 416; 
+        const centerY = 776; 
+        const radius = 367;  
+
+        ctx.fillStyle = "#070707";
+        ctx.fillRect(90, 1145, 650, 190); 
 
         if (!userPhoto) {
             ctx.save();
             ctx.beginPath();
             ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-            ctx.fillStyle = "rgba(17, 17, 17, 0.85)";
+            ctx.fillStyle = "#111111";
             ctx.fill();
             ctx.fillStyle = "#d4af37";
             ctx.textAlign = 'center';
-            ctx.font = 'bold 24px Segoe UI';
+            ctx.font = '30px Segoe UI';
             ctx.fillText("[ Votre Photo Ici ]", centerX, centerY);
             ctx.restore();
-        } else {
+        }
+
+        if (userPhoto) {
             ctx.save();
             ctx.beginPath();
             ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
             ctx.clip();
-            // L'image étant déjà parfaitement cadrée en carré (1:1), on l'ajuste directement aux dimensions du cercle
-            ctx.drawImage(userPhoto, centerX - radius, centerY - radius, radius * 2, radius * 2);
+
+            // Gestion dynamique du Zoom Manuel basé sur le curseur (Suggestion 1)
+            const manualZoom = parseFloat(document.getElementById('zoomSlider').value);
+
+            const diameter = radius * 2;
+            const baseScale = Math.max(diameter / userPhoto.width, diameter / userPhoto.height);
+            const scale = baseScale * manualZoom;
+
+            const drawWidth = userPhoto.width * scale;
+            const drawHeight = userPhoto.height * scale;
+
+            let drawX = centerX - (drawWidth / 2);
+            let drawY = centerY - (drawHeight / 2);
+
+            if (facePosition) {
+                const faceX = facePosition.xPct * drawWidth;
+                const faceY = facePosition.yPct * drawHeight;
+                drawX = centerX - faceX;
+                drawY = centerY - faceY;
+
+                // Empêcher l'image de sortir des limites du cercle
+                const minDrawX = centerX + radius - drawWidth;
+                const maxDrawX = centerX - radius;
+                const minDrawY = centerY + radius - drawHeight;
+                const maxDrawY = centerY - radius;
+
+                drawX = Math.min(Math.max(drawX, minDrawX), maxDrawX);
+                drawY = Math.min(Math.max(drawY, minDrawY), maxDrawY);
+            }
+
+            ctx.drawImage(userPhoto, drawX, drawY, drawWidth, drawHeight);
+            ctx.restore();
+
+            // Anneau doré protecteur autour de la photo
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = '#d4af37'; 
+            ctx.lineWidth = 8;
+            ctx.stroke();
             ctx.restore();
         }
 
-        const lastName = document.getElementById('lastName').value.trim() || "VOTRE NOM";
-        const firstName = document.getElementById('firstName').value.trim() || "Votre Prénom";
+        const lastName = document.getElementById('lastName').value || "VOTRE NOM";
+        const firstName = document.getElementById('firstName').value || "Votre Prénom";
 
-        // Zone de texte située sur le bandeau inférieur doré/sombre
         ctx.textAlign = 'center';
         ctx.fillStyle = '#ffffff';
-        ctx.font = fitText(lastName.toUpperCase(), 44, 'Segoe UI', 650);
-        ctx.fillText(lastName.toUpperCase(), 395, 1455); 
+        ctx.font = fitText(lastName.toUpperCase(), 70, 'Segoe UI', 630);
+        ctx.fillText(lastName.toUpperCase(), 416, 1220); 
 
-        ctx.fillStyle = '#f3e5ab';
-        ctx.font = fitText(firstName, 36, 'Georgia', 650);
-        ctx.fillText(firstName, 395, 1510); 
+        ctx.fillStyle = '#d4af37';
+        ctx.font = fitText(firstName, 55, 'Georgia', 630);
+        ctx.fillText(firstName, 416, 1300); 
     }
 
     function downloadCard() {
         const lastName = document.getElementById('lastName').value.trim();
-        if (!lastName || !userPhoto) return;
+        const firstName = document.getElementById('firstName').value.trim();
+
+        if (!lastName || !firstName || !userPhoto) {
+            alert("Veuillez remplir tous les champs et ajouter votre photo !");
+            return;
+        }
+
         const link = document.createElement('a');
         link.download = `carte-presence-2027-${lastName.toLowerCase()}.jpg`;
-        link.href = canvas.toDataURL('image/jpeg', 0.98);
+        link.href = canvas.toDataURL('image/jpeg', 0.95);
         link.click();
     }
 </script>
